@@ -1,11 +1,13 @@
 const mongoose = require('mongoose')
-const express = require('express')
-const cors = require('cors')
-const bodyParser = require('body-parser')
-const Joi = require('joi')
-const bcrypt = require('bcrypt')
+const httpHandler = require('./http')
+const cookieLib = require('cookie')
+const socketio = require('socket.io')
 
-const app = express()
+const fs = require('fs')
+const https = require('https')
+const express = require('express')
+
+const SessionExpires = process.env.N_SESSION_EXPIRES || 1000 * 60 * 60 * 24
 
 mongoose.connect('mongodb://localhost/nchat', {
   useNewUrlParser: true
@@ -16,70 +18,45 @@ const CredSchema = new mongoose.Schema({
   hash: String
 })
 
+const SessionSchema = new mongoose.Schema({
+  _id: String,
+  userId: String,
+  createdAt: Date
+})
+
 const Credential = mongoose.model('Credential', CredSchema)
+const Session = mongoose.model('Session', SessionSchema)
 
-var corsOptions = {
-  origin: 'http://nikkita.ru',
-  optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+const options = {
+  cert: fs.readFileSync('./cert/certificate.pem'),
+  key: fs.readFileSync('./cert/private.pem')
 }
-app.use(cors(corsOptions))
-app.use(bodyParser.json())
+const app = express()
 
-app.post('/login', async (req, res) => {
+httpHandler({ app, Credential, Session, SessionExpires })
+const httpsServer = https.createServer(options, app)
+
+httpsServer.listen(3000)
+
+const io = socketio.listen(httpsServer)
+
+io.use(async (socket, next) => {
   try {
-    const JoiSchema = Joi.object().keys({
-      email: Joi.string().email().required(),
-      password: Joi.string().required()
-    })
-    const result = Joi.validate(req.body, JoiSchema)
-    if (result.error) return res.send({ code: 400, message: result.error.details[0].message, data: result.error })
-    const credData = result.value
-    const findResult = await Credential.findOne({ email: credData.email })
-    if (!findResult) return res.send({ code: 400, message: 'Email not found' })
-    const compareResult = await bcrypt.compare(credData.password, findResult.hash)
-    if (!compareResult) return res.send({ code: 400, message: 'Password is incorrect' })
-    res.send({ code: 200, message: 'OK' })
+    const { cookie } = socket.handshake.headers
+    if (!cookie) throw new Error('sessid error')
+    const sessid = cookieLib.parse(cookie).sessid
+    if (!sessid) throw new Error('sessid error')
+    const session = await Session.findOne({ _id: sessid })
+    if (!session) throw new Error('sessid error')
+    return next()
   } catch (error) {
-    res.send({ code: 500 })
+    console.log(error.message)
+    return next(error)
   }
 })
 
-app.post('/reg', async (req, res) => {
-  try {
-    const JoiSchema = Joi.object().keys({
-      email: Joi.string().email().required(),
-      password: Joi.string().min(6).required()
-    })
-    const result = Joi.validate(req.body, JoiSchema)
-    if (result.error) return res.send({ code: 400, message: result.error.details[0].message, data: result.error })
-    const credData = result.value
-    const findResult = await Credential.find({ email: credData.email })
-    if (findResult.length !== 0) return res.send({ code: 400, message: 'An account with this email already exists' })
-    const hash = await bcrypt.hash(credData.password, 10)
-    await Credential.create({
-      email: credData.email,
-      hash
-    })
-    res.send({
-      code: 200,
-      message: 'OK'
-    })
-  } catch (error) {
-    console.log(error)
-    res.send({ code: 500 })
-  }
+io.on('connection', socket => {
 })
-
-app.listen(3000, () => {
-  console.log('3000 Port listened')
-})
-
-
-// const io = require('socket.io')(3000)
-
-// io.on('connection', socket => {
-
-// })
 
 // io.of('/').on('register')
 
