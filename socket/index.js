@@ -25,7 +25,8 @@ module.exports = ({ Session, io, Message }) => {
       const _socket = io.sockets.connected[key]
       const _email = cookieLib.parse(_socket.handshake.headers.cookie).email
       users[_email] = {
-        name: _socket.id
+        name: _email,
+        socketId: _socket.id
       }
     })
     try {
@@ -64,10 +65,6 @@ module.exports = ({ Session, io, Message }) => {
         console.log(error)
       }
     })
-  })
-
-  io.on('disconnect', socket => {
-
   })
 }
 // io.of('/').on('register')
