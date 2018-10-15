@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 const httpHandler = require('./http')
-const cookieLib = require('cookie')
+const socketHandler = require('./socket')
 const socketio = require('socket.io')
 
 const fs = require('fs')
@@ -24,8 +24,17 @@ const SessionSchema = new mongoose.Schema({
   createdAt: Date
 })
 
+const MessageSchema = new mongoose.Schema({
+  _id: String,
+  id: String,
+  from: String,
+  createdAt: String,
+  text: String
+})
+
 const Credential = mongoose.model('Credential', CredSchema)
 const Session = mongoose.model('Session', SessionSchema)
+const Message = mongoose.model('Message', MessageSchema)
 
 const options = {
   cert: fs.readFileSync('./cert/certificate.pem'),
@@ -33,39 +42,10 @@ const options = {
 }
 const app = express()
 
-httpHandler({ app, Credential, Session, SessionExpires })
 const httpsServer = https.createServer(options, app)
 
 httpsServer.listen(3000)
 
 const io = socketio.listen(httpsServer)
-
-io.use(async (socket, next) => {
-  try {
-    const { cookie } = socket.handshake.headers
-    if (!cookie) throw new Error('sessid error')
-    const sessid = cookieLib.parse(cookie).sessid
-    if (!sessid) throw new Error('sessid error')
-    const session = await Session.findOne({ _id: sessid })
-    if (!session) throw new Error('sessid error')
-    return next()
-  } catch (error) {
-    console.log(error.message)
-    return next(error)
-  }
-})
-
-io.on('connection', socket => {
-})
-
-// io.of('/').on('register')
-
-// io.emit('hi', { for: 'everyone' })
-
-// io.on('auth', socket => {
-
-// })
-
-// io.on('register', socket => {
-//   console.log(socket)
-// })
+httpHandler({ app, Credential, Session, SessionExpires })
+socketHandler({ io, Session, Message })

@@ -28,6 +28,7 @@ function registration ({ Credential, Session, SessionExpires }) {
         createdAt: new Date()
       })
       res.cookie('sessid', sessid, { expires })
+      res.cookie('email', credData.email, { expires })
       res.send({
         code: 200,
         message: 'OK'
